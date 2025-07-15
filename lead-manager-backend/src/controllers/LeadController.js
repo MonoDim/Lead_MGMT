@@ -3,12 +3,14 @@ const LeadService = require('../services/LeadService');
 
 class LeadController {
   static createLead(req, res) {
-    const { nome, telefone, observacoes } = req.body;
+    const { nome, telefone, email, empresa, origem, observacoes } = req.body;
+
     if (!nome || !telefone) {
       return res.status(400).json({ message: 'Nome e telefone são obrigatórios.' });
     }
 
-    const lead = new Lead(nome, telefone, observacoes);
+    const lead = new Lead(nome, telefone, email, empresa, origem, observacoes);
+
     LeadService.addLead(lead, (err, id) => {
       if (err) return res.status(500).json({ message: 'Erro ao salvar lead.' });
       res.status(201).json({ message: 'Lead criado com sucesso.', id });

@@ -3,8 +3,21 @@ const Lead = require('../models/Lead');
 
 class LeadService {
   static addLead(lead, callback) {
-    const query = `INSERT INTO leads (nome, telefone, observacoes, data_cadastro) VALUES (?, ?, ?, ?)`;
-    const params = [lead.nome, lead.telefone, lead.observacoes, lead.data_cadastro];
+    const query = `
+      INSERT INTO leads (
+        nome, telefone, email, empresa, origem, observacoes, data_cadastro
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+    const params = [
+      lead.nome,
+      lead.telefone,
+      lead.email,
+      lead.empresa,
+      lead.origem,
+      lead.observacoes,
+      lead.data_cadastro
+    ];
+
     db.run(query, params, function (err) {
       callback(err, this?.lastID);
     });

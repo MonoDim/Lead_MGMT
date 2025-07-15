@@ -14,8 +14,12 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nome TEXT NOT NULL,
       telefone TEXT NOT NULL,
+      email TEXT,
+      empresa TEXT,
+      origem TEXT,
       observacoes TEXT,
-      data_cadastro TEXT NOT NULL
+      data_cadastro TEXT
+
     )
   `);
 });
