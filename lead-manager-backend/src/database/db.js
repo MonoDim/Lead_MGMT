@@ -19,7 +19,6 @@ db.serialize(() => {
       origem TEXT,
       observacoes TEXT,
       data_cadastro TEXT
-
     )
   `);
 });
