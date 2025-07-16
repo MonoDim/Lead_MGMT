@@ -1,4 +1,7 @@
+// lead-manager-frontend/src/components/LeadForm.jsx
+
 import { useState } from 'react';
+import { FaGlobe, FaUsers, FaShareAlt, FaGoogle, FaFacebook, FaLinkedin, FaCalendarAlt, FaEllipsisH } from 'react-icons/fa';
 
 function LeadForm({ onAdd }) {
   const [formData, setFormData] = useState({
@@ -11,6 +14,17 @@ function LeadForm({ onAdd }) {
   });
   
   const [errors, setErrors] = useState({});
+
+  const origemIcons = {
+    "Site": <FaGlobe className="inline-block mr-2 text-gray-600 dark:text-gray-400" />, // Adicionado dark:text
+    "Redes Sociais": <FaUsers className="inline-block mr-2 text-gray-600 dark:text-gray-400" />, // Adicionado dark:text
+    "Indicação": <FaShareAlt className="inline-block mr-2 text-gray-600 dark:text-gray-400" />, // Adicionado dark:text
+    "Google Ads": <FaGoogle className="inline-block mr-2 text-gray-600 dark:text-gray-400" />, // Adicionado dark:text
+    "Facebook Ads": <FaFacebook className="inline-block mr-2 text-gray-600 dark:text-gray-400" />, // Adicionado dark:text
+    "LinkedIn": <FaLinkedin className="inline-block mr-2 text-gray-600 dark:text-gray-400" />, // Adicionado dark:text
+    "Evento": <FaCalendarAlt className="inline-block mr-2 text-gray-600 dark:text-gray-400" />, // Adicionado dark:text
+    "Outro": <FaEllipsisH className="inline-block mr-2 text-gray-600 dark:text-gray-400" />, // Adicionado dark:text
+  };
 
   const validateForm = () => {
     const newErrors = {};
@@ -56,7 +70,6 @@ function LeadForm({ onAdd }) {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
     
-    // Limpar erro do campo quando o usuário começar a digitar
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -83,8 +96,18 @@ function LeadForm({ onAdd }) {
     setErrors({});
   };
 
+  // Classes base para inputs
+  const inputBaseClasses = `w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2`;
+  const defaultInputBorderClasses = `border-gray-300 dark:border-gray-600 focus:ring-blue-500 dark:focus:ring-blue-400`;
+  const errorInputBorderClasses = `border-red-500 dark:border-red-400`;
+  const textInputColorClasses = `text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700`;
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    // Fundo do formulário e sombra
+    <form onSubmit={handleSubmit} className="space-y-4 p-4 bg-white shadow-md rounded-lg dark:bg-gray-800 dark:text-gray-100">
+      {/* Título do formulário */}
+      <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">Adicionar Novo Lead</h2>
+      
       <div>
         <input
           type="text"
@@ -92,11 +115,11 @@ function LeadForm({ onAdd }) {
           placeholder="Nome *"
           value={formData.nome}
           onChange={handleChange}
-          className={`w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            errors.nome ? 'border-red-500' : 'border-gray-300'
+          className={`${inputBaseClasses} ${textInputColorClasses} ${
+            errors.nome ? errorInputBorderClasses : defaultInputBorderClasses
           }`}
         />
-        {errors.nome && <p className="text-red-500 text-sm mt-1">{errors.nome}</p>}
+        {errors.nome && <p className="text-red-500 dark:text-red-400 text-sm mt-1">{errors.nome}</p>}
       </div>
 
       <div>
@@ -106,11 +129,11 @@ function LeadForm({ onAdd }) {
           placeholder="Telefone *"
           value={formData.telefone}
           onChange={handleChange}
-          className={`w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            errors.telefone ? 'border-red-500' : 'border-gray-300'
+          className={`${inputBaseClasses} ${textInputColorClasses} ${
+            errors.telefone ? errorInputBorderClasses : defaultInputBorderClasses
           }`}
         />
-        {errors.telefone && <p className="text-red-500 text-sm mt-1">{errors.telefone}</p>}
+        {errors.telefone && <p className="text-red-500 dark:text-red-400 text-sm mt-1">{errors.telefone}</p>}
       </div>
 
       <div>
@@ -120,11 +143,11 @@ function LeadForm({ onAdd }) {
           placeholder="E-mail"
           value={formData.email}
           onChange={handleChange}
-          className={`w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            errors.email ? 'border-red-500' : 'border-gray-300'
+          className={`${inputBaseClasses} ${textInputColorClasses} ${
+            errors.email ? errorInputBorderClasses : defaultInputBorderClasses
           }`}
         />
-        {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+        {errors.email && <p className="text-red-500 dark:text-red-400 text-sm mt-1">{errors.email}</p>}
       </div>
 
       <div>
@@ -134,27 +157,37 @@ function LeadForm({ onAdd }) {
           placeholder="Empresa"
           value={formData.empresa}
           onChange={handleChange}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={`${inputBaseClasses} ${textInputColorClasses} ${defaultInputBorderClasses}`}
         />
       </div>
 
       <div>
-        <select
-          name="origem"
-          value={formData.origem}
-          onChange={handleChange}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">Selecione a origem</option>
-          <option value="Site">Site</option>
-          <option value="Redes Sociais">Redes Sociais</option>
-          <option value="Indicação">Indicação</option>
-          <option value="Google Ads">Google Ads</option>
-          <option value="Facebook Ads">Facebook Ads</option>
-          <option value="LinkedIn">LinkedIn</option>
-          <option value="Evento">Evento</option>
-          <option value="Outro">Outro</option>
-        </select>
+        <div className="relative">
+          <select
+            name="origem"
+            value={formData.origem}
+            onChange={handleChange}
+            // Classes para o select no modo escuro
+            className={`block appearance-none w-full px-3 py-2 pr-10 focus:outline-none focus:ring-2 
+                       ${inputBaseClasses} ${textInputColorClasses} ${defaultInputBorderClasses}`}
+          >
+            <option value="">Selecione a origem</option>
+            {Object.keys(origemIcons).map((origem) => (
+              <option key={origem} value={origem} className="dark:bg-gray-700 dark:text-gray-100"> {/* Cor da opção no dropdown */}
+                {origem}
+              </option>
+            ))}
+          </select>
+          {/* Seta para baixo customizada para o select */}
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
+            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+          </div>
+        </div>
+        {formData.origem && (
+          <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 flex items-center">
+            Origem Selecionada: {origemIcons[formData.origem]} {formData.origem}
+          </p>
+        )}
       </div>
 
       <div>
@@ -164,13 +197,14 @@ function LeadForm({ onAdd }) {
           value={formData.observacoes}
           onChange={handleChange}
           rows={3}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+          className={`${inputBaseClasses} ${textInputColorClasses} ${defaultInputBorderClasses} resize-none`}
         />
       </div>
 
       <button
         type="submit"
-        className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+        // Cores do botão para o modo escuro
+        className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
       >
         Adicionar Lead
       </button>
