@@ -1,0 +1,17 @@
+
+{
+  "name": "lead-management-system",
+  "version": "1.0.0",
+  "description": "Monorepo para o sistema de gerenciamento de leads",
+  "main": "index.js",
+  "scripts": {
+    "start": "concurrently \"npm run start --prefix lead-manager-backend\" \"npm run dev --prefix lead-manager-frontend\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

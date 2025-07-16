@@ -1,25 +1,34 @@
 // lead-manager-frontend/src/App.jsx
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react'; // Adicionado useCallback
 import axios from 'axios';
 import LeadForm from './components/LeadForm';
 import LeadList from './components/LeadList';
 import SearchBar from './components/SearchBar';
 import Stats from './components/Stats';
 import Toast from './components/Toast';
-import { FaSun, FaMoon } from 'react-icons/fa'; // Ícones para sol e lua
+import { FaSun, FaMoon } from 'react-icons/fa';
 
 function App() {
-  const [leads, setLeads] = useState([]);
-  const [filteredLeads, setFilteredLeads] = useState([]);
+  const [leads, setLeads] = useState([]); // Todos os leads puros do backend (mantido para stats)
+  const [filteredLeads, setFilteredLeads] = useState([]); // Leads atualmente exibidos na lista (após search/filter)
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [sortBy, setSortBy] = useState('nome');
   const [sortOrder, setSortOrder] = useState('asc');
+
+  // Novo estado para o filtro de estatísticas
+  // Ex: { type: 'origem', value: 'LinkedIn' }
+  // Ex: { type: 'email', value: true }
+  // Ex: { type: 'empresa', value: true }
+  // Ex: { type: 'none' } ou null para nenhum filtro
+  const [statsFilter, setStatsFilter] = useState(null); 
   
-  // Novo estado para o modo escuro
+  // Novo estado para o termo de busca da SearchBar
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Modo escuro (mantido como está)
   const [darkMode, setDarkMode] = useState(() => {
-    // Tenta ler a preferência do localStorage ou verifica a preferência do sistema
     const savedMode = localStorage.getItem('darkMode');
     if (savedMode) {
       return JSON.parse(savedMode);
@@ -27,7 +36,6 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
-  // useEffect para aplicar/remover a classe 'dark' e salvar no localStorage
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -36,31 +44,87 @@ function App() {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('darkMode', 'false');
     }
-  }, [darkMode]); // Roda sempre que darkMode muda
+  }, [darkMode]);
 
   const showToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
   };
 
-  const fetchLeads = async () => {
+  // Funções de ordenação (mantidas, mas aplicadas no cliente após o filtro/busca do backend)
+  const sortedLeads = (currentLeads, field, order) => {
+    return [...currentLeads].sort((a, b) => {
+      const aValue = String(a[field] || '').toLowerCase(); // Garante string para null/undefined
+      const bValue = String(b[field] || '').toLowerCase(); // Garante string para null/undefined
+      
+      if (order === 'asc') {
+        return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
+      } else {
+        return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
+      }
+    });
+  };
+
+  const handleSort = (field) => {
+    const order = sortBy === field && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortBy(field);
+    setSortOrder(order);
+    // Aplica a ordenação na lista já filtrada/buscada
+    setFilteredLeads(sortedLeads(filteredLeads, field, order));
+  };
+
+  // Função para buscar leads do backend com filtros e termo de busca
+  // Usamos useCallback para memorizar a função e evitar recriações desnecessárias
+  const fetchLeads = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/leads');
-      setLeads(res.data);
-      setFilteredLeads(res.data);
+      let url = 'http://localhost:3000/leads';
+      const params = new URLSearchParams(); // Para construir a query string
+
+      // Lógica de filtro da SearchBar (prioridade mais alta)
+      if (searchTerm) {
+        params.append('q', searchTerm);
+        // Ao aplicar busca por texto, resetamos o filtro de estatística
+        // para evitar comportamento ambíguo.
+        if (statsFilter) setStatsFilter(null); 
+      } 
+      // Lógica de filtro de estatísticas (apenas se não houver searchTerm)
+      else if (statsFilter) {
+        if (statsFilter.type === 'origem') {
+          params.append('origem', statsFilter.value);
+        } else if (statsFilter.type === 'email' && statsFilter.value === true) {
+          params.append('hasEmail', 'true');
+        } else if (statsFilter.type === 'empresa' && statsFilter.value === true) {
+          params.append('hasCompany', 'true');
+        }
+        // Para "Total de Leads" e "Principal Origem" sem valor específico,
+        // não precisamos adicionar parâmetros.
+      }
+
+      // Constrói a URL final com os parâmetros
+      if (params.toString()) {
+        url = `${url}?${params.toString()}`;
+      }
+
+      const res = await axios.get(url);
+      setLeads(res.data); // Guarda a lista completa (ou o resultado do filtro/busca do backend)
+      
+      // Aplica ordenação aqui, pois o filtro/busca vem do backend
+      setFilteredLeads(sortedLeads(res.data, sortBy, sortOrder));
+
     } catch (error) {
       showToast('Erro ao carregar leads', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, statsFilter, sortBy, sortOrder]); // Dependências do useCallback
 
+  // Funções CRUD (mantidas, mas com chamadas a fetchLeads sem parâmetros)
   const addLead = async (lead) => {
     try {
       await axios.post('http://localhost:3000/leads', lead);
-      fetchLeads();
       showToast('Lead adicionado com sucesso!');
+      fetchLeads(); // Recarrega com os filtros/busca atuais
     } catch (error) {
       showToast('Erro ao adicionar lead', 'error');
     }
@@ -69,8 +133,8 @@ function App() {
   const updateLead = async (id, lead) => {
     try {
       await axios.put(`http://localhost:3000/leads/${id}`, lead);
-      fetchLeads();
       showToast('Lead atualizado com sucesso!');
+      fetchLeads(); // Recarrega com os filtros/busca atuais
     } catch (error) {
       showToast('Erro ao atualizar lead', 'error');
     }
@@ -81,51 +145,43 @@ function App() {
     
     try {
       await axios.delete(`http://localhost:3000/leads/${id}`);
-      fetchLeads();
       showToast('Lead removido com sucesso!');
+      fetchLeads(); // Recarrega com os filtros/busca atuais
     } catch (error) {
       showToast('Erro ao remover lead', 'error');
     }
   };
 
-  const handleSearch = (searchTerm) => {
-    const filtered = leads.filter(lead => 
-      lead.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.telefone.includes(searchTerm)
-    );
-    setFilteredLeads(sortedLeads(filtered, sortBy, sortOrder)); // Garante que a busca também esteja ordenada
+  // Handler para a SearchBar
+  const handleSearch = (term) => {
+    setSearchTerm(term); // Atualiza o termo de busca
+    // O useEffect acionará fetchLeads quando searchTerm mudar
+    // Limpar o filtro de estatística é tratado dentro de fetchLeads
   };
 
-  const sortedLeads = (currentLeads, field, order) => {
-    return [...currentLeads].sort((a, b) => {
-      const aValue = String(a[field]).toLowerCase();
-      const bValue = String(b[field]).toLowerCase();
-      
-      if (order === 'asc') {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
-    });
+  // Handler para cliques nos cards de estatísticas
+  const handleStatsFilter = (filterType, filterValue = null) => {
+    if (statsFilter && statsFilter.type === filterType && statsFilter.value === filterValue) {
+      // Se clicar no mesmo filtro novamente, desativa
+      setStatsFilter(null);
+    } else {
+      setStatsFilter({ type: filterType, value: filterValue });
+    }
+    // Ao aplicar um filtro de estatística, limpa o termo de busca da SearchBar
+    // para evitar conflitos visuais e lógicos.
+    setSearchTerm(''); 
   };
 
-  const handleSort = (field) => {
-    const order = sortBy === field && sortOrder === 'asc' ? 'desc' : 'asc';
-    setSortBy(field);
-    setSortOrder(order);
-    setFilteredLeads(sortedLeads(filteredLeads, field, order));
-  };
 
+  // useEffect para carregar leads na montagem e sempre que filtros/busca mudarem
   useEffect(() => {
     fetchLeads();
-  }, []);
-
+  }, [fetchLeads]); // Dependência do useCallback
 
   return (
-    // Aplica classes de fundo sensíveis ao modo escuro no container principal
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300">
       <div className="mx-auto p-6">
-        <header className="mb-8 flex justify-between items-center"> {/* Adicionado flex para o botão de toggle */}
+        <header className="mb-8 flex justify-between items-center">
           <div>
             <h1 className="text-4xl font-bold mb-2">
               Gerenciador de Leads
@@ -134,7 +190,6 @@ function App() {
               Gerencie seus leads de forma eficiente e organizada
             </p>
           </div>
-          {/* Botão de Toggle do Modo Escuro */}
           <button
             onClick={() => setDarkMode(!darkMode)}
             className="p-3 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-yellow-300 shadow-md hover:scale-105 transition-transform duration-200"
@@ -144,11 +199,11 @@ function App() {
           </button>
         </header>
 
-        <Stats leads={leads} />
+        {/* Passa a função handleStatsFilter para o componente Stats */}
+        <Stats leads={leads} onFilterClick={handleStatsFilter} activeFilter={statsFilter} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-1">
-            {/* Adicionado dark:bg-gray-800 e dark:text-gray-100 para o formulário */}
             <div className="bg-white rounded-lg shadow-sm p-6 dark:bg-gray-800 dark:text-gray-100">
               <h2 className="text-xl font-semibold mb-4">Adicionar Novo Lead</h2>
               <LeadForm onAdd={addLead} />
@@ -156,11 +211,11 @@ function App() {
           </div>
 
           <div className="lg:col-span-2">
-            {/* Adicionado dark:bg-gray-800 e dark:text-gray-100 para a lista de leads */}
             <div className="bg-white rounded-lg shadow-sm p-6 dark:bg-gray-800 dark:text-gray-100">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">Lista de Leads</h2>
-                <SearchBar onSearch={handleSearch} />
+                {/* Passa searchTerm e setSearchTerm para SearchBar para controle externo */}
+                <SearchBar onSearch={handleSearch} searchTerm={searchTerm} /> 
               </div>
               
               {loading ? (
@@ -188,10 +243,3 @@ function App() {
 }
 
 export default App;
-
-//==============================================//
-//                                              //
-//  He wears a mask just to cover the raw flesh //
-//  -"MF DOOM"                                  //
-//                                              //
-//==============================================//
