@@ -1,13 +1,10 @@
 // lead-manager-backend/src/controllers/LeadController.js
 
-const LeadService = require('../services/LeadService'); // Importa a CLASSE LeadService, não a instância
+const LeadService = require('../services/LeadService');
 
 class LeadController {
-  constructor(dbInstance) { // Agora aceita a instância do DB
-    // Passa a instância do DB para o construtor do LeadService
+  constructor(dbInstance) {
     this.leadService = new LeadService(dbInstance);
-
-    // Binde os métodos para garantir que 'this' se refira à instância da classe
     this.addLead = this.addLead.bind(this);
     this.getLeads = this.getLeads.bind(this);
     this.updateLead = this.updateLead.bind(this);
@@ -18,46 +15,62 @@ class LeadController {
     try {
       const { nome, empresa, origem, observacoes, emails, telefones } = req.body;
 
-      // Validação básica
-      if (!nome || !emails || !Array.isArray(emails) || emails.length === 0 || !telefones || !Array.isArray(telefones) || telefones.length === 0) {
-        return res.status(400).json({ message: 'Nome, e-mail(s) e telefone(s) são obrigatórios.' });
+      // Validação: Nome e telefone(s) são obrigatórios. E-mails são opcionais.
+      if (!nome || !telefones || !Array.isArray(telefones) || telefones.length === 0) {
+        return res.status(400).json({ message: 'Nome e telefone(s) são obrigatórios.' });
       }
 
-      // Validação de formato para e-mails
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      for (const emailObj of emails) {
-        if (!emailObj.email || !emailRegex.test(emailObj.email)) {
-          return res.status(400).json({ message: `E-mail inválido encontrado: ${emailObj.email}.` });
+      // Validação de formato para e-mails (apenas se houver e-mails)
+      const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+      if (emails && Array.isArray(emails)) {
+        for (const emailObj of emails) {
+          if (!emailObj.email_address || !emailRegex.test(emailObj.email_address)) {
+            return res.status(400).json({ message: `E-mail inválido encontrado: ${emailObj.email_address}` });
+          }
         }
       }
 
-      // Validação de formato para telefones (apenas números)
-      const phoneRegex = /^\d{10,11}$/; // Exemplo: 10 ou 11 dígitos numéricos
+      // Validação de formato para telefones
+      const phoneRegex = /^\\d{10,11}$/; // Exige 10 ou 11 dígitos numéricos
       for (const telObj of telefones) {
-        const cleanedPhoneNumber = telObj.phone_number.replace(/\D/g, ''); // Remove caracteres não numéricos
+        const cleanedPhoneNumber = telObj.phone_number.replace(/\\D/g, ''); // Remove caracteres não numéricos
         if (!cleanedPhoneNumber || !phoneRegex.test(cleanedPhoneNumber)) {
           return res.status(400).json({ message: `Telefone inválido encontrado: ${telObj.phone_number}. Deve conter 10 ou 11 dígitos numéricos.` });
         }
-        // Atualiza o objeto com o número limpo antes de passar para o serviço
-        telObj.phone_number = cleanedPhoneNumber;
+        telObj.phone_number = cleanedPhoneNumber; // Atualiza com número limpo
       }
 
-      const leadId = await this.leadService.addLead({ nome, empresa, origem, observacoes, emails, telefones });
-      res.status(201).json({ id: leadId, message: 'Lead adicionado com sucesso!' });
+      const newLeadId = await this.leadService.addLead({
+        nome,
+        empresa,
+        origem,
+        observacoes,
+        emails,
+        telefones,
+      });
+
+      res.status(201).json({ message: 'Lead adicionado com sucesso!', id: newLeadId });
     } catch (error) {
-      console.error('[LeadController Error] Erro ao criar lead:', error.message);
+      console.error('[LeadController Error] Erro ao adicionar lead:', error.message);
       res.status(500).json({ message: 'Falha ao adicionar lead.' });
     }
   }
 
   async getLeads(req, res) {
     try {
-      const { q, sortBy, sortOrder } = req.query;
-      const leads = await this.leadService.getLeads(q, sortBy, sortOrder);
+      const { q, origem, hasEmail, hasCompany } = req.query; // q para busca geral
+
+      const filterOptions = {};
+      if (q) filterOptions.q = q;
+      if (origem) filterOptions.origem = origem;
+      if (hasEmail === 'true') filterOptions.hasEmail = true;
+      if (hasCompany === 'true') filterOptions.hasCompany = true;
+
+      const leads = await this.leadService.getLeads(filterOptions);
       res.status(200).json(leads);
     } catch (error) {
-      console.error('[LeadController Error] Erro ao listar/buscar leads:', error.message);
-      res.status(500).json({ message: 'Falha ao obter leads com filtros.' });
+      console.error('[LeadController Error] Erro ao buscar leads:', error.message);
+      res.status(500).json({ message: 'Falha ao buscar leads.' });
     }
   }
 
@@ -66,23 +79,25 @@ class LeadController {
       const { id } = req.params;
       const { nome, empresa, origem, observacoes, emails, telefones } = req.body;
 
-      // Validação básica
-      if (!nome || !emails || !Array.isArray(emails) || emails.length === 0 || !telefones || !Array.isArray(telefones) || telefones.length === 0) {
-        return res.status(400).json({ message: 'Nome, e-mail(s) e telefone(s) são obrigatórios.' });
+      // Validação: Nome e telefone(s) são obrigatórios. E-mails são opcionais.
+      if (!nome || !telefones || !Array.isArray(telefones) || telefones.length === 0) {
+        return res.status(400).json({ message: 'Nome e telefone(s) são obrigatórios.' });
       }
 
-      // Validação de formato para e-mails
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      for (const emailObj of emails) {
-        if (!emailObj.email || !emailRegex.test(emailObj.email)) {
-          return res.status(400).json({ message: `E-mail inválido encontrado: ${emailObj.email}.` });
+      // Validação de formato para e-mails (apenas se houver e-mails)
+      const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+      if (emails && Array.isArray(emails)) {
+        for (const emailObj of emails) {
+          if (!emailObj.email_address || !emailRegex.test(emailObj.email_address)) {
+            return res.status(400).json({ message: `E-mail inválido encontrado: ${emailObj.email_address}` });
+          }
         }
       }
-
+      
       // Validação de formato para telefones
-      const phoneRegex = /^\d{10,11}$/;
+      const phoneRegex = /^\\d{10,11}$/;
       for (const telObj of telefones) {
-        const cleanedPhoneNumber = telObj.phone_number.replace(/\D/g, '');
+        const cleanedPhoneNumber = telObj.phone_number.replace(/\\D/g, '');
         if (!cleanedPhoneNumber || !phoneRegex.test(cleanedPhoneNumber)) {
           return res.status(400).json({ message: `Telefone inválido encontrado: ${telObj.phone_number}. Deve conter 10 ou 11 dígitos numéricos.` });
         }
@@ -111,8 +126,8 @@ class LeadController {
         res.status(404).json({ message: 'Lead não encontrado.' });
       }
     } catch (error) {
-      console.error('[LeadController Error] Erro ao deletar lead:', error.message);
-      res.status(500).json({ message: 'Falha ao deletar lead.' });
+      console.error('[LeadController Error] Erro ao remover lead:', error.message);
+      res.status(500).json({ message: 'Falha ao remover lead.' });
     }
   }
 }
