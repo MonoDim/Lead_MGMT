@@ -1,18 +1,18 @@
 // lead-manager-frontend/src/components/LeadList.jsx
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Importar useEffect
 import {
   FaGlobe, FaUsers, FaShareAlt, FaGoogle, FaFacebook, FaLinkedin, FaCalendarAlt, FaEllipsisH,
   FaSort, FaSortUp, FaSortDown,
   FaEdit, FaTrashAlt, FaSave, FaTimes, FaWhatsapp, FaEnvelope,
-  FaSpinner // Novo ícone para loading
+  FaSpinner
 } from 'react-icons/fa';
 
 function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
-  const [validationErrors, setValidationErrors] = useState({}); // Novo estado para erros de validação
-  const [isSaving, setIsSaving] = useState(false); // Novo estado para feedback de salvamento
+  const [validationErrors, setValidationErrors] = useState({});
+  const [isSaving, setIsSaving] = useState(false);
 
   const origemIcons = {
     "Site": <FaGlobe className="inline-block mr-1 text-gray-600 dark:text-gray-400" />,
@@ -25,6 +25,34 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
     "Outro": <FaEllipsisH className="inline-block mr-1 text-gray-600" />,
   };
 
+  // Funções auxiliares para extrair o telefone/email primário (ou o primeiro disponível)
+  const getPrimaryPhone = (telefones) => {
+    if (!telefones || telefones.length === 0) return '';
+    const primary = telefones.find(tel => tel.is_primary === 1);
+    return primary ? formatTelefone(primary.phone_number) : formatTelefone(telefones[0].phone_number);
+  };
+
+  const getPrimaryEmail = (emails) => {
+    if (!emails || emails.length === 0) return '';
+    const primary = emails.find(email => email.is_primary === 1);
+    return primary ? primary.email : emails[0].email;
+  };
+
+  // useEffect para inicializar editData corretamente quando o modo de edição é ativado
+  useEffect(() => {
+    if (editingId !== null && leads) {
+      const leadToEdit = leads.find(lead => lead.id === editingId);
+      if (leadToEdit) {
+        setEditData({
+          ...leadToEdit,
+          telefone: getPrimaryPhone(leadToEdit.telefones), // Formata para exibição no input
+          email: getPrimaryEmail(leadToEdit.emails) // Formata para exibição no input
+        });
+      }
+    }
+  }, [editingId, leads]);
+
+
   const validateField = (field, value) => {
     let error = '';
     switch (field) {
@@ -32,7 +60,7 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
         if (!value.trim()) error = 'Nome é obrigatório.';
         break;
       case 'telefone':
-        const phoneNumbers = value.replace(/\D/g, '');
+        const phoneNumbers = value.replace(/\D/g, ''); // Remove formatação para validação
         if (!phoneNumbers) {
             error = 'Telefone é obrigatório.';
         } else if (phoneNumbers.length < 10 || phoneNumbers.length > 11) {
@@ -40,9 +68,8 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
         }
         break;
       case 'email':
-        if (!value.trim()) {
-          error = 'E-mail é obrigatório.';
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        // Email é opcional para LeadForm, mas obrigatório para LeadList (para edição, como está no controller)
+        if (value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) { // Permite vazio, mas valida se preenchido
           error = 'E-mail inválido.';
         }
         break;
@@ -55,7 +82,7 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
 
   const handleEdit = (lead) => {
     setEditingId(lead.id);
-    setEditData(lead);
+    // editData é inicializado no useEffect
     setValidationErrors({});
   };
 
@@ -68,15 +95,26 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
   const handleSaveEdit = async () => {
     const isNameValid = validateField('nome', editData.nome);
     const isPhoneValid = validateField('telefone', editData.telefone);
-    const isEmailValid = validateField('email', editData.email);
+    const isEmailValid = validateField('email', editData.email); // Pode ser vazio se não houver email
 
-    if (!isNameValid || !isPhoneValid || !isEmailValid) {
+    if (!isNameValid || !isPhoneValid || (editData.email && !isEmailValid)) { // Ajuste na validação do email
       return;
     }
 
     setIsSaving(true);
     try {
-      await onUpdate(editingId, editData);
+      // Reformatar telefones e emails para o formato de array esperado pelo backend
+      const updatedData = {
+        ...editData,
+        telefones: [{ 
+          phone_number: editData.telefone.replace(/\D/g, ''), // Limpa o número
+          is_whatsapp: 1, 
+          is_primary: 1 
+        }],
+        emails: editData.email ? [{ email: editData.email, is_primary: 1 }] : []
+      };
+
+      await onUpdate(editingId, updatedData);
       setEditingId(null);
       setEditData({});
     } catch (error) {
@@ -108,19 +146,17 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
   };
 
   const getSortIcon = (field) => {
-    // Adicionado dark:text para os ícones de ordenação
     if (sortBy !== field) return <FaSort className="inline-block ml-1 text-gray-400 dark:text-gray-500" />;
     return sortOrder === 'asc' ? <FaSortUp className="inline-block ml-1 text-gray-600 dark:text-gray-300" /> : <FaSortDown className="inline-block ml-1 text-gray-600 dark:text-gray-300" />;
   };
 
   const getOrigemColor = (origem) => {
     const colors = {
-      // Ajuste as cores para o modo escuro usando dark:bg e dark:text
       'Site': 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100',
       'Redes Sociais': 'bg-purple-100 text-purple-800 dark:bg-purple-800 dark:text-purple-100',
       'Indicação': 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100',
       'Google Ads': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100',
-      'Facebook Ads': 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100', // Manter consistente se for mesma cor de Site
+      'Facebook Ads': 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100',
       'LinkedIn': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-800 dark:text-indigo-100',
       'Evento': 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100',
       'Outro': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
@@ -131,28 +167,23 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
   if (leads.length === 0) {
     return (
       <div className="text-center py-8">
-        {/* Texto para o estado de nenhum lead */}
         <p className="text-gray-500 dark:text-gray-400 text-lg">Nenhum lead cadastrado ainda.</p>
         <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">Comece adicionando seu primeiro lead!</p>
       </div>
     );
   }
 
-  // Classe base para inputs no modo de edição (replicadas do LeadForm para consistência)
   const inputBaseClasses = "w-full border rounded-md px-3 py-1 text-sm transition-all duration-200 focus:outline-none focus:ring-2";
   const defaultInputBorderClasses = "border-gray-300 dark:border-gray-600 focus:ring-blue-400 dark:focus:ring-blue-400";
-  const errorInputBorderClasses = "border-red-400 dark:border-red-500"; // Usar red-500 para borda em dark mode
+  const errorInputBorderClasses = "border-red-400 dark:border-red-500";
   const textInputColorClasses = "text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700";
 
 
   return (
-    // Fundo da tabela e sombra
     <div className="overflow-x-auto bg-white shadow-md rounded-lg p-4 dark:bg-gray-800 dark:text-gray-100">
-      {/* Título da lista */}
       <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">Lista de Leads</h2>
       <table className="w-full border-collapse">
         <thead>
-          {/* Cabeçalho da tabela */}
           <tr className="bg-gray-100 dark:bg-gray-700">
             <th
               className="text-left p-3 font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 min-w-[150px] text-gray-800 dark:text-gray-200"
@@ -178,9 +209,7 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
         </thead>
         <tbody>
           {leads.map((lead) => (
-            // Linha da tabela
             <tr key={lead.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-              {/* Campo Nome e Observações */}
               <td className="p-3 align-top">
                 {editingId === lead.id ? (
                   <>
@@ -209,7 +238,6 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
                   </div>
                 )}
               </td>
-              {/* Campo Telefone */}
               <td className="p-3 align-top">
                 {editingId === lead.id ? (
                   <>
@@ -224,10 +252,10 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
                     {validationErrors.telefone && <p className="text-red-500 dark:text-red-400 text-xs mt-1">{validationErrors.telefone}</p>}
                   </>
                 ) : (
-                  <span className="text-gray-700 dark:text-gray-200">{lead.telefone}</span>
+                  // Exibe o telefone primário ou o primeiro disponível
+                  <span className="text-gray-700 dark:text-gray-200">{getPrimaryPhone(lead.telefones)}</span>
                 )}
               </td>
-              {/* Campo Email */}
               <td className="p-3 align-top">
                 {editingId === lead.id ? (
                   <>
@@ -242,10 +270,10 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
                     {validationErrors.email && <p className="text-red-500 dark:text-red-400 text-xs mt-1">{validationErrors.email}</p>}
                   </>
                 ) : (
-                  <span className="text-gray-700 dark:text-gray-200">{lead.email || '-'}</span>
+                  // Exibe o email primário ou o primeiro disponível
+                  <span className="text-gray-700 dark:text-gray-200">{getPrimaryEmail(lead.emails) || '-'}</span>
                 )}
               </td>
-              {/* Campo Empresa */}
               <td className="p-3 align-top">
                 {editingId === lead.id ? (
                   <input
@@ -258,18 +286,15 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
                   <span className="text-gray-700 dark:text-gray-200">{lead.empresa || '-'}</span>
                 )}
               </td>
-              {/* Campo Origem */}
               <td className="p-3 align-top">
                 {editingId === lead.id ? (
                   <select
                     value={editData.origem || ''}
                     onChange={(e) => handleEditChange('origem', e.target.value)}
-                    // Classes para o select no modo escuro
                     className={`${inputBaseClasses} ${defaultInputBorderClasses} bg-white text-gray-700 dark:bg-gray-700 dark:text-gray-100`}
                   >
                     <option value="">Selecione</option>
                     {Object.keys(origemIcons).map((origem) => (
-                      // Opções do select no modo escuro
                       <option key={origem} value={origem} className="dark:bg-gray-700 dark:text-gray-100">
                         {origem}
                       </option>
@@ -277,7 +302,6 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
                   </select>
                 ) : (
                   lead.origem ? (
-                    // Tags de origem
                     <span className={`flex items-center px-2 py-1 text-xs rounded-full whitespace-nowrap ${getOrigemColor(lead.origem)}`}>
                       {origemIcons[lead.origem]}
                       {lead.origem}
@@ -287,7 +311,6 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
                   )
                 )}
               </td>
-              {/* Coluna de Ações */}
               <td className="p-3 align-top">
                 <div className="flex flex-wrap gap-2 justify-center">
                   {editingId === lead.id ? (
@@ -295,7 +318,7 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
                       <button
                         onClick={handleSaveEdit}
                         className="flex items-center justify-center bg-green-500 text-white px-3 py-1 rounded-md hover:bg-green-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed
-                                   dark:bg-green-600 dark:hover:bg-green-700 dark:focus:ring-green-500" // Cores para o modo escuro
+                                   dark:bg-green-600 dark:hover:bg-green-700 dark:focus:ring-green-500"
                         disabled={isSaving || Object.values(validationErrors).some(error => error !== '')}
                       >
                         {isSaving ? (
@@ -308,28 +331,32 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
                       <button
                         onClick={handleCancelEdit}
                         className="flex items-center justify-center bg-gray-400 text-white px-3 py-1 rounded-md hover:bg-gray-500 transition-colors text-sm
-                                   dark:bg-gray-600 dark:hover:bg-gray-700 dark:focus:ring-gray-500" // Cores para o modo escuro
+                                   dark:bg-gray-600 dark:hover:bg-gray-700 dark:focus:ring-gray-500"
                       >
                         <FaTimes className="mr-1" /> Cancelar
                       </button>
                     </>
                   ) : (
                     <>
-                      <a
-                        href={`https://wa.me/55${lead.telefone.replace(/\D/g, '')}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center bg-green-500 text-white px-3 py-1 rounded-md hover:bg-green-600 transition-colors text-sm
-                                   dark:bg-green-700 dark:hover:bg-green-800" // Cores para o modo escuro
-                        title="Enviar mensagem via WhatsApp"
-                      >
-                        <FaWhatsapp className="mr-1" /> WhatsApp
-                      </a>
-                      {lead.email && (
+                      {/* Link do WhatsApp usando o telefone primário */}
+                      {getPrimaryPhone(lead.telefones) && (
                         <a
-                          href={`mailto:${lead.email}`}
+                          href={`https://wa.me/55${getPrimaryPhone(lead.telefones).replace(/\D/g, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center bg-green-500 text-white px-3 py-1 rounded-md hover:bg-green-600 transition-colors text-sm
+                                     dark:bg-green-700 dark:hover:bg-green-800"
+                          title="Enviar mensagem via WhatsApp"
+                        >
+                          <FaWhatsapp className="mr-1" /> WhatsApp
+                        </a>
+                      )}
+                      {/* Link do E-mail usando o email primário */}
+                      {getPrimaryEmail(lead.emails) && (
+                        <a
+                          href={`mailto:${getPrimaryEmail(lead.emails)}`}
                           className="flex items-center justify-center bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition-colors text-sm
-                                     dark:bg-blue-700 dark:hover:bg-blue-800" // Cores para o modo escuro
+                                     dark:bg-blue-700 dark:hover:bg-blue-800"
                           title="Enviar E-mail"
                         >
                           <FaEnvelope className="mr-1" /> E-mail
@@ -338,7 +365,7 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
                       <button
                         onClick={() => handleEdit(lead)}
                         className="flex items-center justify-center bg-yellow-500 text-white px-3 py-1 rounded-md hover:bg-yellow-600 transition-colors text-sm
-                                   dark:bg-yellow-600 dark:hover:bg-yellow-700" // Cores para o modo escuro
+                                   dark:bg-yellow-600 dark:hover:bg-yellow-700"
                         title="Editar Lead"
                       >
                         <FaEdit className="mr-1" /> Editar
@@ -346,7 +373,7 @@ function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
                       <button
                         onClick={() => onDelete(lead.id)}
                         className="flex items-center justify-center bg-red-500 text-white px-3 py-1 rounded-md hover:bg-red-600 transition-colors text-sm
-                                   dark:bg-red-600 dark:hover:bg-red-700" // Cores para o modo escuro
+                                   dark:bg-red-600 dark:hover:bg-red-700"
                         title="Remover Lead"
                       >
                         <FaTrashAlt className="mr-1" /> Remover

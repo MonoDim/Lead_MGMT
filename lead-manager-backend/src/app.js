@@ -2,21 +2,32 @@
 
 const express = require('express');
 const cors = require('cors');
-const leadRoutes = require('./routes/leadRoutes');
+const LeadController = require('./controllers/LeadController'); // Importa a CLASSE LeadController
 
-const app = express();
+// Agora app.js exporta uma função que configura e retorna a instância do Express app
+// A instância do DB é passada como argumento para esta função.
+module.exports = (dbInstance) => {
+  const app = express();
 
-// Middlewares
-app.use(cors()); // Permite requisições de origens diferentes (importante para o frontend)
-app.use(express.json()); // Habilita o parsing de JSON no corpo das requisições
+  // Middleware para permitir CORS (Cross-Origin Resource Sharing)
+  app.use(cors());
 
-// Rotas da API
-app.use('/leads', leadRoutes); // Monta as rotas de leads sob o prefixo /leads
+  // Middleware para parsear JSON do corpo das requisições
+  app.use(express.json());
 
-// Middleware de tratamento de erros (opcional, mas recomendado para erros não capturados)
-app.use((err, req, res, next) => {
-  console.error('[App Error Handler]', err.stack);
-  res.status(500).json({ message: 'Algo deu errado no servidor!' });
-});
+  // Instancia o LeadController, passando a instância do banco de dados para ele
+  const leadController = new LeadController(dbInstance);
 
-module.exports = app; // Exporta a instância do aplicativo Express
+  // Define as rotas para a API de leads
+  app.post('/leads', leadController.addLead);
+  app.get('/leads', leadController.getLeads);
+  app.put('/leads/:id', leadController.updateLead);
+  app.delete('/leads/:id', leadController.deleteLead);
+
+  // Rota de teste simples para a raiz da API
+  app.get('/', (req, res) => {
+    res.send('Lead Manager API is running!');
+  });
+
+  return app; // Retorna a instância configurada do Express app
+};
