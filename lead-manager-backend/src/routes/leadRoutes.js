@@ -1,16 +1,18 @@
 // lead-manager-backend/src/routes/leadRoutes.js
 
 const express = require('express');
-const LeadController = require('../controllers/LeadController');
-const router = express.Router();
+const LeadController = require('../controllers/LeadController'); // Importa a CLASSE LeadController
 
-router.post('/', LeadController.createLead);
+// Este módulo agora exporta uma FUNÇÃO que recebe a instância do DB
+// e retorna um roteador Express configurado.
+module.exports = (dbInstance) => {
+  const router = express.Router();
+  const leadController = new LeadController(dbInstance); // Cria a instância do LeadController aqui
 
-// Agora, a rota GET / apenas chama listLeads.
-// listLeads no controller é inteligente o suficiente para lidar com query parameters como 'q', 'hasEmail', etc.
-router.get('/', LeadController.listLeads);
+  router.post('/', leadController.addLead); // Use os métodos da INSTÂNCIA do controller
+  router.get('/', leadController.getLeads); // (use addLead e getLeads como no LeadController.js)
+  router.put('/:id', leadController.updateLead);
+  router.delete('/:id', leadController.deleteLead);
 
-router.put('/:id', LeadController.updateLead);
-router.delete('/:id', LeadController.deleteLead);
-
-module.exports = router;
+  return router; // Retorna o roteador configurado
+};
