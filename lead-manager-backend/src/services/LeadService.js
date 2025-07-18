@@ -1,170 +1,288 @@
 // lead-manager-backend/src/services/LeadService.js
 
-const { getDb } = require('../database/db');
-
 class LeadService {
+  constructor(db) {
+    this.db = db;
+  }
 
   /**
-   * Adiciona um novo lead ao banco de dados. (Sem alterações)
-   * @param {object} leadData - Os dados do lead a ser adicionado.
-   * @param {string} leadData.nome
-   * @param {string} leadData.telefone
-   * @param {string} [leadData.email]
-   * @param {string} [leadData.empresa]
-   * @param {string} [leadData.origem]
-   * @param {string} [leadData.observacoes]
-   * @returns {Promise<number>} O ID do lead recém-criado.
-   * @throws {Error} Se ocorrer um erro ao adicionar o lead.
+   * Adiciona um novo lead, seus e-mails e telefones ao banco de dados em uma transação.
+   * @param {object} leadData - Dados do lead, incluindo arrays de emails e telefones.
+   * @returns {Promise<number>} O ID do lead recém-adicionado.
    */
-  static async addLead(leadData) {
-    const db = getDb();
-    const data_cadastro = new Date().toISOString();
+  async addLead(leadData) {
+    const { nome, empresa, origem, observacoes, emails, telefones } = leadData;
+    const dataCadastro = new Date().toISOString();
+    const db = this.db; // Captura a instância do DB para garantir o contexto correto
 
-    const query = `
-      INSERT INTO leads (
-        nome, telefone, email, empresa, origem, observacoes, data_cadastro
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `;
-
-    const params = [
-      leadData.nome,
-      leadData.telefone,
-      leadData.email || null,
-      leadData.empresa || null,
-      leadData.origem || null,
-      leadData.observacoes || null,
-      data_cadastro
-    ];
+    console.log('[DEBUG] addLead iniciado com leadData:', leadData);
+    console.log('[DEBUG] Dados do Lead Principal:', { nome, empresa, origem, observacoes });
+    console.log('[DEBUG] Emails recebidos:', emails);
+    console.log('[DEBUG] Telefones recebidos:', telefones);
 
     return new Promise((resolve, reject) => {
-      db.run(query, params, function (err) {
-        if (err) {
-          console.error('[LeadService Error] Erro ao adicionar lead:', err.message);
-          return reject(new Error('Falha ao adicionar lead.'));
-        }
-        resolve(this.lastID);
+      // Usa db.serialize para garantir que as operações SQL dentro dele sejam executadas em ordem
+      db.serialize(() => {
+        // Inicia a transação
+        db.run("BEGIN TRANSACTION;", async function(err) {
+          if (err) {
+            console.error('[LeadService Error] Erro ao iniciar transação:', err.message);
+            return reject(new Error('Falha ao iniciar transação.'));
+          }
+          console.log('[DEBUG] Transação iniciada.');
+
+          try {
+            // 1. Insere o lead principal
+            const insertLeadSql = `INSERT INTO leads (nome, empresa, origem, observacoes, data_cadastro) VALUES (?, ?, ?, ?, ?)`;
+            console.log('[DEBUG] Tentando inserir lead principal com SQL:', insertLeadSql);
+            console.log('[DEBUG] Parâmetros do lead principal:', [nome, empresa, origem, observacoes, dataCadastro]);
+
+            const leadId = await new Promise((res, rej) => {
+              // Usamos db.run e o 'this' no callback se refere ao Statement object
+              db.run(insertLeadSql, [nome, empresa, origem, observacoes, dataCadastro], function(leadErr) {
+                if (leadErr) {
+                  console.error('[LeadService Error] Erro ao inserir lead principal:', leadErr.message);
+                  return rej(leadErr);
+                }
+                console.log('[DEBUG] Lead principal inserido. lastID:', this.lastID);
+                res(this.lastID); // 'this.lastID' é a forma correta de obter o ID da última inserção
+              });
+            });
+
+            // 2. Insere os e-mails (se houver e não estiverem vazios)
+            const insertEmailSql = `INSERT INTO lead_emails (lead_id, email, is_primary) VALUES (?, ?, ?)`;
+            for (const emailObj of emails) {
+              // Filtra emails vazios que podem ter passado pelo frontend
+              if (emailObj.email.trim() === '') {
+                console.log('[DEBUG] Ignorando email vazio.');
+                continue;
+              }
+              console.log('[DEBUG] Tentando inserir email:', emailObj.email);
+              await new Promise((res, rej) => {
+                db.run(insertEmailSql, [leadId, emailObj.email, emailObj.is_primary ? 1 : 0], function(emailErr) {
+                  if (emailErr) {
+                    console.error('[LeadService Error] Erro ao inserir email:', emailErr.message);
+                    return rej(emailErr);
+                  }
+                  console.log('[DEBUG] Email inserido com sucesso.');
+                  res();
+                });
+              });
+            }
+
+            // 3. Insere os telefones (se houver e não estiverem vazios)
+            const insertPhoneSql = `INSERT INTO lead_phones (lead_id, phone_number, is_whatsapp, is_primary) VALUES (?, ?, ?, ?)`;
+            for (const phoneObj of telefones) {
+              // Filtra telefones vazios que podem ter passado pelo frontend
+              if (phoneObj.phone_number.replace(/\D/g, '').trim() === '') {
+                console.log('[DEBUG] Ignorando telefone vazio.');
+                continue;
+              }
+              console.log('[DEBUG] Tentando inserir telefone:', phoneObj.phone_number);
+              await new Promise((res, rej) => {
+                db.run(insertPhoneSql, [leadId, phoneObj.phone_number, phoneObj.is_whatsapp ? 1 : 0, phoneObj.is_primary ? 1 : 0], function(phoneErr) {
+                  if (phoneErr) {
+                    console.error('[LeadService Error] Erro ao inserir telefone:', phoneErr.message);
+                    return rej(phoneErr);
+                  }
+                  console.log('[DEBUG] Telefone inserido com sucesso.');
+                  res();
+                });
+              });
+            }
+
+            // 4. Commita a transação se tudo deu certo
+            console.log('[DEBUG] Tentando commitar transação.');
+            db.run("COMMIT;", function(commitErr) {
+              if (commitErr) {
+                console.error('[LeadService Error] Erro ao commitar transação:', commitErr.message);
+                return reject(new Error('Falha ao commitar transação.'));
+              }
+              console.log('[DEBUG] Transação commitada com sucesso. Lead ID:', leadId);
+              resolve(leadId); // Retorna o ID do lead principal
+            });
+
+          } catch (error) {
+            // Em caso de qualquer erro em qualquer etapa, faz o rollback
+            console.error('[LeadService Error] Erro capturado no try/catch principal:', error.message);
+            db.run("ROLLBACK;", function(rollbackErr) { // Usa db.run diretamente aqui
+              if (rollbackErr) {
+                console.error('[LeadService Error] Erro ao fazer rollback:', rollbackErr.message);
+              }
+              console.log('[DEBUG] Rollback concluído.');
+              reject(error); // Rejeita a Promise com o erro original
+            });
+          }
+        }); // Sem .bind(this) aqui, pois estamos usando a variável 'db'
       });
     });
   }
 
   /**
-   * Obtém leads do banco de dados, com suporte a busca por termo e filtros de estatística.
-   * @param {object} filters - Um objeto contendo os parâmetros de filtro.
-   * @param {string} [filters.q] - Termo de busca por nome ou telefone.
-   * @param {boolean} [filters.hasEmail] - Se true, filtra leads que possuem email.
-   * @param {boolean} [filters.hasCompany] - Se true, filtra leads que possuem empresa.
-   * @param {string} [filters.origem] - Filtra leads por uma origem específica.
-   * @returns {Promise<Array<object>>} Um array de objetos lead correspondentes aos filtros.
-   * @throws {Error} Se ocorrer um erro ao buscar os leads.
+   * Obtém leads com base em um termo de busca e critérios de ordenação.
+   * Inclui e-mails e telefones associados a cada lead.
+   * @param {string} q - Termo de busca opcional.
+   * @param {string} sortBy - Campo para ordenar.
+   * @param {string} sortOrder - Ordem da ordenação ('asc' ou 'desc').
+   * @returns {Promise<Array<object>>} Uma lista de leads com seus e-mails e telefones.
    */
-  static async getLeads(filters = {}) {
-    const db = getDb();
-    let query = `SELECT id, nome, telefone, email, empresa, origem, observacoes, data_cadastro FROM leads`;
-    const params = [];
-    const conditions = [];
-
-    // 1. Filtro por termo de busca (nome ou telefone)
-    if (filters.q) {
-      // Prioriza a busca por termo, ignorando outros filtros de stats se `q` estiver presente
-      // (Esta lógica de prioridade será mais fortemente controlada no Controller)
-      // Aqui, apenas adicionamos a condição se ela existir.
-      const searchTerm = `%${filters.q.toUpperCase()}%`;
-      const phoneSearchTerm = `%${filters.q.replace(/\D/g, '')}%`;
-      conditions.push(`(UPPER(nome) LIKE ? OR REPLACE(telefone, ?, '') LIKE ?)`);
-      params.push(searchTerm, /\D/g, phoneSearchTerm);
-    } else {
-      // 2. Filtros de estatísticas (aplicados apenas se não houver 'q')
-      if (filters.hasEmail === 'true') { // Note que o valor virá como string 'true' do frontend
-        conditions.push(`email IS NOT NULL AND email != ''`);
-      }
-      if (filters.hasCompany === 'true') { // Note que o valor virá como string 'true' do frontend
-        conditions.push(`empresa IS NOT NULL AND empresa != ''`);
-      }
-      if (filters.origem) {
-        conditions.push(`origem = ?`);
-        params.push(filters.origem);
-      }
-    }
-
-    // Adiciona as condições WHERE à query
-    if (conditions.length > 0) {
-      query += ` WHERE ${conditions.join(' AND ')}`;
-    }
-
-    // Ordem padrão
-    query += ` ORDER BY id DESC`;
-
+  async getLeads(q = '', sortBy = 'nome', sortOrder = 'asc') {
     return new Promise((resolve, reject) => {
-      db.all(query, params, (err, rows) => {
+      let query = `
+        SELECT
+          l.id,
+          l.nome,
+          l.empresa,
+          l.origem,
+          l.observacoes,
+          l.data_cadastro
+        FROM leads l
+      `;
+      let params = [];
+
+      if (q) {
+        query += ` WHERE l.nome LIKE ? OR l.empresa LIKE ? OR l.origem LIKE ? OR l.observacoes LIKE ?`;
+        params = [`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`];
+      }
+
+      // Adiciona ordenação
+      query += ` ORDER BY l.${sortBy} ${sortOrder === 'desc' ? 'DESC' : 'ASC'}`;
+
+      this.db.all(query, params, async (err, leads) => {
         if (err) {
           console.error('[LeadService Error] Erro ao obter leads com filtros:', err.message);
           return reject(new Error('Falha ao obter leads com filtros.'));
         }
-        resolve(rows);
+
+        // Para cada lead, buscar seus e-mails e telefones
+        const leadsWithContacts = await Promise.all(leads.map(async lead => {
+          const emails = await new Promise((res, rej) => {
+            this.db.all(`SELECT id, email, is_primary FROM lead_emails WHERE lead_id = ?`, [lead.id], (emailErr, rows) => {
+              if (emailErr) rej(emailErr);
+              else res(rows.map(row => ({ ...row, is_primary: !!row.is_primary }))); // Converte 0/1 para boolean
+            });
+          });
+
+          const phones = await new Promise((res, rej) => {
+            this.db.all(`SELECT id, phone_number, is_whatsapp, is_primary FROM lead_phones WHERE lead_id = ?`, [lead.id], (phoneErr, rows) => {
+              if (phoneErr) rej(phoneErr);
+              else res(rows.map(row => ({ ...row, is_whatsapp: !!row.is_whatsapp, is_primary: !!row.is_primary }))); // Converte 0/1 para boolean
+            });
+          });
+
+          return { ...lead, emails, telefones: phones };
+        }));
+
+        resolve(leadsWithContacts);
       });
     });
   }
 
   /**
-   * Atualiza um lead existente no banco de dados. (Sem alterações)
+   * Atualiza um lead existente, seus e-mails e telefones.
+   * Implementa uma transação para garantir a consistência.
    * @param {number} id - O ID do lead a ser atualizado.
-   * @param {object} leadData - Os novos dados do lead.
-   * @returns {Promise<number>} O número de linhas modificadas.
-   * @throws {Error} Se o lead não for encontrado ou ocorrer um erro na atualização.
+   * @param {object} leadData - Novos dados do lead.
+   * @returns {Promise<boolean>} True se o lead foi atualizado, False caso contrário.
    */
-  static async updateLead(id, leadData) {
-    const db = getDb();
-    const query = `
-      UPDATE leads
-      SET nome = ?, telefone = ?, email = ?, empresa = ?, origem = ?, observacoes = ?
-      WHERE id = ?
-    `;
-
-    const params = [
-      leadData.nome,
-      leadData.telefone,
-      leadData.email || null,
-      leadData.empresa || null,
-      leadData.origem || null,
-      leadData.observacoes || null,
-      id
-    ];
+  async updateLead(id, leadData) {
+    const { nome, empresa, origem, observacoes, emails, telefones } = leadData;
 
     return new Promise((resolve, reject) => {
-      db.run(query, params, function (err) {
-        if (err) {
-          console.error(`[LeadService Error] Erro ao atualizar lead com ID ${id}:`, err.message);
-          return reject(new Error('Falha ao atualizar lead.'));
-        }
-        if (this.changes === 0) {
-          return reject(new Error(`Lead com ID ${id} não encontrado.`));
-        }
-        resolve(this.changes);
+      this.db.serialize(() => {
+        this.db.run("BEGIN TRANSACTION;");
+
+        // Atualiza o lead principal
+        const updateLeadSql = `UPDATE leads SET nome = ?, empresa = ?, origem = ?, observacoes = ? WHERE id = ?`;
+        this.db.run(updateLeadSql, [nome, empresa, origem, observacoes, id], async (err) => {
+          if (err) {
+            console.error('[LeadService Error] Erro ao atualizar lead principal:', err.message);
+            this.db.run("ROLLBACK;");
+            return reject(new Error('Falha ao atualizar lead principal.'));
+          }
+
+          // Deleta e reinsere e-mails
+          const deleteEmailsSql = `DELETE FROM lead_emails WHERE lead_id = ?`;
+          this.db.run(deleteEmailsSql, [id], async (deleteErr) => {
+            if (deleteErr) {
+              console.error('[LeadService Error] Erro ao deletar emails antigos:', deleteErr.message);
+              this.db.run("ROLLBACK;");
+              return reject(new Error('Falha ao deletar emails antigos.'));
+            }
+
+            const insertEmailSql = `INSERT INTO lead_emails (lead_id, email, is_primary) VALUES (?, ?, ?)`;
+            let emailPromises = emails.map(emailObj => {
+              return new Promise((res, rej) => {
+                this.db.run(insertEmailSql, [id, emailObj.email, emailObj.is_primary ? 1 : 0], (emailErr) => {
+                  if (emailErr) rej(emailErr);
+                  else res();
+                });
+              });
+            });
+
+            // Deleta e reinsere telefones
+            const deletePhonesSql = `DELETE FROM lead_phones WHERE lead_id = ?`;
+            this.db.run(deletePhonesSql, [id], async (deleteErr) => {
+              if (deleteErr) {
+                console.error('[LeadService Error] Erro ao deletar telefones antigos:', deleteErr.message);
+                this.db.run("ROLLBACK;");
+                return reject(new Error('Falha ao deletar telefones antigos.'));
+              }
+
+              const insertPhoneSql = `INSERT INTO lead_phones (lead_id, phone_number, is_whatsapp, is_primary) VALUES (?, ?, ?, ?)`;
+              let phonePromises = telefones.map(phoneObj => {
+                return new Promise((res, rej) => {
+                  this.db.run(insertPhoneSql, [id, phoneObj.phone_number, phoneObj.is_whatsapp ? 1 : 0, phoneObj.is_primary ? 1 : 0], (phoneErr) => {
+                    if (phoneErr) rej(phoneErr);
+                    else res();
+                  });
+                });
+              });
+
+              // Espera todas as operações de e-mail e telefone
+              Promise.all([...emailPromises, ...phonePromises])
+                .then(() => {
+                  this.db.run("COMMIT;", (commitErr) => {
+                    if (commitErr) {
+                      console.error('[LeadService Error] Erro ao commitar transação de atualização:', commitErr.message);
+                      return reject(new Error('Falha ao commitar transação de atualização.'));
+                    }
+                    resolve(true); // Retorna true para indicar sucesso
+                  });
+                })
+                .catch(allErr => {
+                  console.error('[LeadService Error] Erro durante a atualização de e-mails/telefones, rollback:', allErr.message);
+                  this.db.run("ROLLBACK;");
+                  reject(allErr);
+                });
+            });
+          });
+        });
       });
     });
   }
 
   /**
-   * Deleta um lead do banco de dados. (Sem alterações)
+   * Deleta um lead e seus contatos associados.
+   * Devido a ON DELETE CASCADE, os e-mails e telefones serão deletados automaticamente.
    * @param {number} id - O ID do lead a ser deletado.
-   * @param {object} LeadData
-   * @returns {Promise<number>} O número de linhas deletadas.
-   * @throws {Error} Se o lead não for encontrado ou ocorrer um erro na exclusão.
+   * @returns {Promise<boolean>} True se o lead foi deletado, False caso contrário.
    */
-  static async deleteLead(id) {
-    const db = getDb();
-    const query = `DELETE FROM leads WHERE id = ?`;
-
+  async deleteLead(id) {
     return new Promise((resolve, reject) => {
-      db.run(query, [id], function (err) {
+      const sql = `DELETE FROM leads WHERE id = ?`;
+      this.db.run(sql, [id], function(err) { // 'this' aqui se refere ao Statement object
         if (err) {
-          console.error(`[LeadService Error] Erro ao deletar lead com ID ${id}:`, err.message);
+          console.error('[LeadService Error] Erro ao deletar lead:', err.message);
           return reject(new Error('Falha ao deletar lead.'));
         }
-        if (this.changes === 0) {
-          return reject(new Error(`Lead com ID ${id} não encontrado para exclusão.`));
-        }
-        resolve(this.changes);
+        // NOVO LOG DE DEBUG: Verifique o valor de this.changes
+        console.log(`[DEBUG] deleteLead - ID: ${id}, Linhas afetadas (this.changes): ${this.changes}`);
+
+        // AQUI ESTÁ O PONTO CHAVE:
+        // Se this.changes for 0, o LeadController interpreta como "não encontrado".
+        // Vamos confirmar o valor de this.changes.
+        resolve(this.changes > 0);
       });
     });
   }

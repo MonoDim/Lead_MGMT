@@ -2,21 +2,23 @@
 
 const express = require('express');
 const cors = require('cors');
-const leadRoutes = require('./routes/leadRoutes');
+// Não importe mais LeadController diretamente aqui, pois ele será instanciado em leadRoutes.js
+const configureLeadRoutes = require('./routes/leadRoutes'); // Importa a FUNÇÃO que configura as rotas
 
-const app = express();
+module.exports = (dbInstance) => {
+  const app = express();
 
-// Middlewares
-app.use(cors()); // Permite requisições de origens diferentes (importante para o frontend)
-app.use(express.json()); // Habilita o parsing de JSON no corpo das requisições
+  app.use(cors());
+  app.use(express.json());
 
-// Rotas da API
-app.use('/leads', leadRoutes); // Monta as rotas de leads sob o prefixo /leads
+  // Use o roteador de leads, passando a instância do banco de dados para a função de configuração das rotas.
+  // Isso garante que o LeadController dentro de leadRoutes.js seja instanciado corretamente.
+  app.use('/leads', configureLeadRoutes(dbInstance));
 
-// Middleware de tratamento de erros (opcional, mas recomendado para erros não capturados)
-app.use((err, req, res, next) => {
-  console.error('[App Error Handler]', err.stack);
-  res.status(500).json({ message: 'Algo deu errado no servidor!' });
-});
+  // Rota de teste simples para a raiz da API
+  app.get('/', (req, res) => {
+    res.send('Lead Manager API is running!');
+  });
 
-module.exports = app; // Exporta a instância do aplicativo Express
+  return app;
+};

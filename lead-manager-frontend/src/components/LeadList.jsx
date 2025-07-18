@@ -1,364 +1,138 @@
 // lead-manager-frontend/src/components/LeadList.jsx
 
-import { useState } from 'react';
-import {
-  FaGlobe, FaUsers, FaShareAlt, FaGoogle, FaFacebook, FaLinkedin, FaCalendarAlt, FaEllipsisH,
-  FaSort, FaSortUp, FaSortDown,
-  FaEdit, FaTrashAlt, FaSave, FaTimes, FaWhatsapp, FaEnvelope,
-  FaSpinner // Novo ícone para loading
-} from 'react-icons/fa';
+import { FaEdit, FaTrash, FaWhatsapp, FaEnvelope } from 'react-icons/fa'; // Importa ícones de WhatsApp e E-mail
 
-function LeadList({ leads, onDelete, onUpdate, onSort, sortBy, sortOrder }) {
-  const [editingId, setEditingId] = useState(null);
-  const [editData, setEditData] = useState({});
-  const [validationErrors, setValidationErrors] = useState({}); // Novo estado para erros de validação
-  const [isSaving, setIsSaving] = useState(false); // Novo estado para feedback de salvamento
-
-  const origemIcons = {
-    "Site": <FaGlobe className="inline-block mr-1 text-gray-600 dark:text-gray-400" />,
-    "Redes Sociais": <FaUsers className="inline-block mr-1 text-gray-600 dark:text-gray-400" />,
-    "Indicação": <FaShareAlt className="inline-block mr-1 text-gray-600 dark:text-gray-400" />,
-    "Google Ads": <FaGoogle className="inline-block mr-1 text-gray-600" />,
-    "Facebook Ads": <FaFacebook className="inline-block mr-1 text-gray-600" />,
-    "LinkedIn": <FaLinkedin className="inline-block mr-1 text-gray-600" />,
-    "Evento": <FaCalendarAlt className="inline-block mr-1 text-gray-600" />,
-    "Outro": <FaEllipsisH className="inline-block mr-1 text-gray-600" />,
+function LeadList({ leads, onEdit, onDelete }) {
+  // Função auxiliar para encontrar o telefone primário
+  const getPrimaryPhone = (telefones) => {
+    if (!telefones || telefones.length === 0) return null;
+    const primary = telefones.find(p => p.is_primary);
+    return primary ? primary.phone_number : telefones[0].phone_number; // Retorna o primário ou o primeiro se não houver primário
   };
 
-  const validateField = (field, value) => {
-    let error = '';
-    switch (field) {
-      case 'nome':
-        if (!value.trim()) error = 'Nome é obrigatório.';
-        break;
-      case 'telefone':
-        const phoneNumbers = value.replace(/\D/g, '');
-        if (!phoneNumbers) {
-            error = 'Telefone é obrigatório.';
-        } else if (phoneNumbers.length < 10 || phoneNumbers.length > 11) {
-            error = 'Telefone inválido (mín. 10 ou 11 dígitos numéricos).';
-        }
-        break;
-      case 'email':
-        if (!value.trim()) {
-          error = 'E-mail é obrigatório.';
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-          error = 'E-mail inválido.';
-        }
-        break;
-      default:
-        break;
-    }
-    setValidationErrors(prev => ({ ...prev, [field]: error }));
-    return error === '';
+  // Função auxiliar para encontrar o e-mail primário
+  const getPrimaryEmail = (emails) => {
+    if (!emails || emails.length === 0) return null;
+    const primary = emails.find(e => e.is_primary);
+    return primary ? primary.email : emails[0].email; // Retorna o primário ou o primeiro se não houver primário
   };
 
-  const handleEdit = (lead) => {
-    setEditingId(lead.id);
-    setEditData(lead);
-    setValidationErrors({});
+  // Função para limpar e formatar o número de telefone para o link do WhatsApp
+  const cleanPhoneNumber = (phoneNumber) => {
+    // Remove todos os caracteres não numéricos
+    return phoneNumber ? phoneNumber.replace(/\D/g, '') : '';
   };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditData({});
-    setValidationErrors({});
-  };
-
-  const handleSaveEdit = async () => {
-    const isNameValid = validateField('nome', editData.nome);
-    const isPhoneValid = validateField('telefone', editData.telefone);
-    const isEmailValid = validateField('email', editData.email);
-
-    if (!isNameValid || !isPhoneValid || !isEmailValid) {
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      await onUpdate(editingId, editData);
-      setEditingId(null);
-      setEditData({});
-    } catch (error) {
-      console.error("Erro ao salvar lead:", error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleEditChange = (field, value) => {
-    setEditData(prev => ({ ...prev, [field]: value }));
-    if (['nome', 'telefone', 'email'].includes(field)) {
-      validateField(field, value);
-    }
-  };
-
-  const formatTelefone = (value) => {
-    const numbers = value.replace(/\D/g, '');
-    
-    if (numbers.length <= 2) {
-      return `(${numbers}`;
-    } else if (numbers.length <= 6) {
-      return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
-    } else if (numbers.length <= 10) {
-      return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
-    } else {
-      return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7, 11)}`;
-    }
-  };
-
-  const getSortIcon = (field) => {
-    // Adicionado dark:text para os ícones de ordenação
-    if (sortBy !== field) return <FaSort className="inline-block ml-1 text-gray-400 dark:text-gray-500" />;
-    return sortOrder === 'asc' ? <FaSortUp className="inline-block ml-1 text-gray-600 dark:text-gray-300" /> : <FaSortDown className="inline-block ml-1 text-gray-600 dark:text-gray-300" />;
-  };
-
-  const getOrigemColor = (origem) => {
-    const colors = {
-      // Ajuste as cores para o modo escuro usando dark:bg e dark:text
-      'Site': 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100',
-      'Redes Sociais': 'bg-purple-100 text-purple-800 dark:bg-purple-800 dark:text-purple-100',
-      'Indicação': 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100',
-      'Google Ads': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100',
-      'Facebook Ads': 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100', // Manter consistente se for mesma cor de Site
-      'LinkedIn': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-800 dark:text-indigo-100',
-      'Evento': 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100',
-      'Outro': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-    };
-    return colors[origem] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
-  };
-
-  if (leads.length === 0) {
-    return (
-      <div className="text-center py-8">
-        {/* Texto para o estado de nenhum lead */}
-        <p className="text-gray-500 dark:text-gray-400 text-lg">Nenhum lead cadastrado ainda.</p>
-        <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">Comece adicionando seu primeiro lead!</p>
-      </div>
-    );
-  }
-
-  // Classe base para inputs no modo de edição (replicadas do LeadForm para consistência)
-  const inputBaseClasses = "w-full border rounded-md px-3 py-1 text-sm transition-all duration-200 focus:outline-none focus:ring-2";
-  const defaultInputBorderClasses = "border-gray-300 dark:border-gray-600 focus:ring-blue-400 dark:focus:ring-blue-400";
-  const errorInputBorderClasses = "border-red-400 dark:border-red-500"; // Usar red-500 para borda em dark mode
-  const textInputColorClasses = "text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700";
-
 
   return (
-    // Fundo da tabela e sombra
-    <div className="overflow-x-auto bg-white shadow-md rounded-lg p-4 dark:bg-gray-800 dark:text-gray-100">
-      {/* Título da lista */}
+    <div className="bg-white shadow-md rounded-lg p-6 dark:bg-gray-800 dark:shadow-xl dark:text-gray-100 overflow-x-auto">
       <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">Lista de Leads</h2>
-      <table className="w-full border-collapse">
-        <thead>
-          {/* Cabeçalho da tabela */}
-          <tr className="bg-gray-100 dark:bg-gray-700">
-            <th
-              className="text-left p-3 font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 min-w-[150px] text-gray-800 dark:text-gray-200"
-              onClick={() => onSort('nome')}
-            >
-              Nome {getSortIcon('nome')}
-            </th>
-            <th
-              className="text-left p-3 font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 min-w-[120px] text-gray-800 dark:text-gray-200"
-              onClick={() => onSort('telefone')}
-            >
-              Telefone {getSortIcon('telefone')}
-            </th>
-            <th className="text-left p-3 font-semibold min-w-[150px] text-gray-800 dark:text-gray-200">E-mail</th>
-            <th className="text-left p-3 font-semibold min-w-[120px] text-gray-800 dark:text-gray-200">Empresa</th>
-            <th className="text-left p-3 font-semibold min-w-[120px] text-gray-800 dark:text-gray-200">
-              Origem
-            </th>
-            <th className="text-left p-3 font-semibold w-[450px] text-gray-800 dark:text-gray-200">
-              Ações
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {leads.map((lead) => (
-            // Linha da tabela
-            <tr key={lead.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-              {/* Campo Nome e Observações */}
-              <td className="p-3 align-top">
-                {editingId === lead.id ? (
-                  <>
-                    <input
-                      type="text"
-                      value={editData.nome || ''}
-                      onChange={(e) => handleEditChange('nome', e.target.value)}
-                      className={`${inputBaseClasses} ${textInputColorClasses} ${
-                        validationErrors.nome ? errorInputBorderClasses : defaultInputBorderClasses
-                      }`}
-                    />
-                    {validationErrors.nome && <p className="text-red-500 dark:text-red-400 text-xs mt-1">{validationErrors.nome}</p>}
-                    <textarea
-                      value={editData.observacoes || ''}
-                      onChange={(e) => handleEditChange('observacoes', e.target.value)}
-                      placeholder="Observações..."
-                      className={`${inputBaseClasses} ${textInputColorClasses} ${defaultInputBorderClasses} mt-2 h-16 resize-y`}
-                    />
-                  </>
-                ) : (
-                  <div>
-                    <p className="font-medium text-gray-800 dark:text-gray-100">{lead.nome}</p>
+      {leads.length === 0 ? (
+        <p className="text-center text-gray-600 dark:text-gray-400">Nenhum lead encontrado.</p>
+      ) : (
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <thead className="bg-gray-50 dark:bg-gray-700">
+            <tr>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
+                Nome do Cliente
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
+                Empresa
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
+                Origem
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
+                Contatos
+              </th>
+              <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
+                Ações
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200 dark:bg-gray-800 dark:divide-gray-700">
+            {leads.map((lead) => {
+              const primaryPhone = getPrimaryPhone(lead.telefones);
+              const primaryEmail = getPrimaryEmail(lead.emails);
+              const cleanedPhone = cleanPhoneNumber(primaryPhone);
+
+              return (
+                <tr key={lead.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{lead.nome}</div>
+                    {/* Observações abaixo do nome */}
                     {lead.observacoes && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic whitespace-pre-wrap">{lead.observacoes}</p>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Obs: {lead.observacoes}
+                      </div>
                     )}
-                  </div>
-                )}
-              </td>
-              {/* Campo Telefone */}
-              <td className="p-3 align-top">
-                {editingId === lead.id ? (
-                  <>
-                    <input
-                      type="text"
-                      value={editData.telefone || ''}
-                      onChange={(e) => handleEditChange('telefone', formatTelefone(e.target.value))}
-                      className={`${inputBaseClasses} ${textInputColorClasses} ${
-                        validationErrors.telefone ? errorInputBorderClasses : defaultInputBorderClasses
-                      }`}
-                    />
-                    {validationErrors.telefone && <p className="text-red-500 dark:text-red-400 text-xs mt-1">{validationErrors.telefone}</p>}
-                  </>
-                ) : (
-                  <span className="text-gray-700 dark:text-gray-200">{lead.telefone}</span>
-                )}
-              </td>
-              {/* Campo Email */}
-              <td className="p-3 align-top">
-                {editingId === lead.id ? (
-                  <>
-                    <input
-                      type="email"
-                      value={editData.email || ''}
-                      onChange={(e) => handleEditChange('email', e.target.value)}
-                      className={`${inputBaseClasses} ${textInputColorClasses} ${
-                        validationErrors.email ? errorInputBorderClasses : defaultInputBorderClasses
-                      }`}
-                    />
-                    {validationErrors.email && <p className="text-red-500 dark:text-red-400 text-xs mt-1">{validationErrors.email}</p>}
-                  </>
-                ) : (
-                  <span className="text-gray-700 dark:text-gray-200">{lead.email || '-'}</span>
-                )}
-              </td>
-              {/* Campo Empresa */}
-              <td className="p-3 align-top">
-                {editingId === lead.id ? (
-                  <input
-                    type="text"
-                    value={editData.empresa || ''}
-                    onChange={(e) => handleEditChange('empresa', e.target.value)}
-                    className={`${inputBaseClasses} ${textInputColorClasses} ${defaultInputBorderClasses}`}
-                  />
-                ) : (
-                  <span className="text-gray-700 dark:text-gray-200">{lead.empresa || '-'}</span>
-                )}
-              </td>
-              {/* Campo Origem */}
-              <td className="p-3 align-top">
-                {editingId === lead.id ? (
-                  <select
-                    value={editData.origem || ''}
-                    onChange={(e) => handleEditChange('origem', e.target.value)}
-                    // Classes para o select no modo escuro
-                    className={`${inputBaseClasses} ${defaultInputBorderClasses} bg-white text-gray-700 dark:bg-gray-700 dark:text-gray-100`}
-                  >
-                    <option value="">Selecione</option>
-                    {Object.keys(origemIcons).map((origem) => (
-                      // Opções do select no modo escuro
-                      <option key={origem} value={origem} className="dark:bg-gray-700 dark:text-gray-100">
-                        {origem}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  lead.origem ? (
-                    // Tags de origem
-                    <span className={`flex items-center px-2 py-1 text-xs rounded-full whitespace-nowrap ${getOrigemColor(lead.origem)}`}>
-                      {origemIcons[lead.origem]}
-                      {lead.origem}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400 dark:text-gray-500">-</span>
-                  )
-                )}
-              </td>
-              {/* Coluna de Ações */}
-              <td className="p-3 align-top">
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {editingId === lead.id ? (
-                    <>
-                      <button
-                        onClick={handleSaveEdit}
-                        className="flex items-center justify-center bg-green-500 text-white px-3 py-1 rounded-md hover:bg-green-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed
-                                   dark:bg-green-600 dark:hover:bg-green-700 dark:focus:ring-green-500" // Cores para o modo escuro
-                        disabled={isSaving || Object.values(validationErrors).some(error => error !== '')}
-                      >
-                        {isSaving ? (
-                          <FaSpinner className="animate-spin mr-1" />
-                        ) : (
-                          <FaSave className="mr-1" />
-                        )}
-                        Salvar
-                      </button>
-                      <button
-                        onClick={handleCancelEdit}
-                        className="flex items-center justify-center bg-gray-400 text-white px-3 py-1 rounded-md hover:bg-gray-500 transition-colors text-sm
-                                   dark:bg-gray-600 dark:hover:bg-gray-700 dark:focus:ring-gray-500" // Cores para o modo escuro
-                      >
-                        <FaTimes className="mr-1" /> Cancelar
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <a
-                        href={`https://wa.me/55${lead.telefone.replace(/\D/g, '')}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center bg-green-500 text-white px-3 py-1 rounded-md hover:bg-green-600 transition-colors text-sm
-                                   dark:bg-green-700 dark:hover:bg-green-800" // Cores para o modo escuro
-                        title="Enviar mensagem via WhatsApp"
-                      >
-                        <FaWhatsapp className="mr-1" /> WhatsApp
-                      </a>
-                      {lead.email && (
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {lead.empresa || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {lead.origem || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {primaryEmail && (
+                      <div className="flex items-center">
+                        <FaEnvelope className="mr-1 text-blue-500" /> {primaryEmail}
+                      </div>
+                    )}
+                    {primaryPhone && (
+                      <div className="flex items-center mt-1">
+                        <FaWhatsapp className="mr-1 text-green-500" /> {primaryPhone}
+                      </div>
+                    )}
+                    {!primaryEmail && !primaryPhone && 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <div className="flex justify-end space-x-2">
+                      {/* Ícone de WhatsApp */}
+                      {cleanedPhone && (
                         <a
-                          href={`mailto:${lead.email}`}
-                          className="flex items-center justify-center bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition-colors text-sm
-                                     dark:bg-blue-700 dark:hover:bg-blue-800" // Cores para o modo escuro
-                          title="Enviar E-mail"
+                          href={`https://wa.me/+55${cleanedPhone}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          title={`Conversar com ${lead.nome} no WhatsApp`}
                         >
-                          <FaEnvelope className="mr-1" /> E-mail
+                          <FaWhatsapp className="text-xl" />
                         </a>
                       )}
+                      {/* Ícone de E-mail */}
+                      {primaryEmail && (
+                        <a
+                          href={`mailto:${primaryEmail}`}
+                          className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          title={`Enviar e-mail para ${lead.nome}`}
+                        >
+                          <FaEnvelope className="text-xl" />
+                        </a>
+                      )}
+                      {/* Botão de Editar */}
                       <button
-                        onClick={() => handleEdit(lead)}
-                        className="flex items-center justify-center bg-yellow-500 text-white px-3 py-1 rounded-md hover:bg-yellow-600 transition-colors text-sm
-                                   dark:bg-yellow-600 dark:hover:bg-yellow-700" // Cores para o modo escuro
+                        onClick={() => onEdit(lead)}
+                        className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                         title="Editar Lead"
                       >
-                        <FaEdit className="mr-1" /> Editar
+                        <FaEdit className="text-xl" />
                       </button>
+                      {/* Botão de Deletar */}
                       <button
                         onClick={() => onDelete(lead.id)}
-                        className="flex items-center justify-center bg-red-500 text-white px-3 py-1 rounded-md hover:bg-red-600 transition-colors text-sm
-                                   dark:bg-red-600 dark:hover:bg-red-700" // Cores para o modo escuro
-                        title="Remover Lead"
+                        className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        title="Deletar Lead"
                       >
-                        <FaTrashAlt className="mr-1" /> Remover
+                        <FaTrash className="text-xl" />
                       </button>
-                    </>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

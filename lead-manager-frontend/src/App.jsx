@@ -1,243 +1,252 @@
 // lead-manager-frontend/src/App.jsx
 
-import { useEffect, useState, useCallback } from 'react'; // Adicionado useCallback
-import axios from 'axios';
+import { useState, useEffect } from 'react';
 import LeadForm from './components/LeadForm';
 import LeadList from './components/LeadList';
-import SearchBar from './components/SearchBar';
 import Stats from './components/Stats';
-import Toast from './components/Toast';
-import { FaSun, FaMoon } from 'react-icons/fa';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { FaMoon, FaSun, FaTimesCircle } from 'react-icons/fa'; // Ícones para tema e limpar filtro
 
 function App() {
-  const [leads, setLeads] = useState([]); // Todos os leads puros do backend (mantido para stats)
-  const [filteredLeads, setFilteredLeads] = useState([]); // Leads atualmente exibidos na lista (após search/filter)
-  const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  const [leads, setLeads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('nome');
   const [sortOrder, setSortOrder] = useState('asc');
-
-  // Novo estado para o filtro de estatísticas
-  // Ex: { type: 'origem', value: 'LinkedIn' }
-  // Ex: { type: 'email', value: true }
-  // Ex: { type: 'empresa', value: true }
-  // Ex: { type: 'none' } ou null para nenhum filtro
-  const [statsFilter, setStatsFilter] = useState(null); 
-  
-  // Novo estado para o termo de busca da SearchBar
-  const [searchTerm, setSearchTerm] = useState('');
-
-  // Modo escuro (mantido como está)
-  const [darkMode, setDarkMode] = useState(() => {
-    const savedMode = localStorage.getItem('darkMode');
-    if (savedMode) {
-      return JSON.parse(savedMode);
-    }
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const [editingLead, setEditingLead] = useState(null);
+  const [theme, setTheme] = useState(() => {
+    const savedTheme = localStorage.getItem('theme');
+    return savedTheme || 'light';
   });
+  const [activeFilter, setActiveFilter] = useState(null);
+
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
   useEffect(() => {
-    if (darkMode) {
+    fetchLeads();
+  }, [searchTerm, sortBy, sortOrder, activeFilter]);
+
+  useEffect(() => {
+    if (theme === 'dark') {
       document.documentElement.classList.add('dark');
-      localStorage.setItem('darkMode', 'true');
     } else {
       document.documentElement.classList.remove('dark');
-      localStorage.setItem('darkMode', 'false');
     }
-  }, [darkMode]);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
-  const showToast = (message, type = 'success') => {
-    setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
-  };
 
-  // Funções de ordenação (mantidas, mas aplicadas no cliente após o filtro/busca do backend)
-  const sortedLeads = (currentLeads, field, order) => {
-    return [...currentLeads].sort((a, b) => {
-      const aValue = String(a[field] || '').toLowerCase(); // Garante string para null/undefined
-      const bValue = String(b[field] || '').toLowerCase(); // Garante string para null/undefined
-      
-      if (order === 'asc') {
-        return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
-      } else {
-        return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
-      }
-    });
-  };
-
-  const handleSort = (field) => {
-    const order = sortBy === field && sortOrder === 'asc' ? 'desc' : 'asc';
-    setSortBy(field);
-    setSortOrder(order);
-    // Aplica a ordenação na lista já filtrada/buscada
-    setFilteredLeads(sortedLeads(filteredLeads, field, order));
-  };
-
-  // Função para buscar leads do backend com filtros e termo de busca
-  // Usamos useCallback para memorizar a função e evitar recriações desnecessárias
-  const fetchLeads = useCallback(async () => {
+  const fetchLeads = async () => {
     setLoading(true);
+    let url = `${API_BASE_URL}/leads?q=${searchTerm}&sortBy=${sortBy}&sortOrder=${sortOrder}`;
+
+    if (activeFilter) {
+      if (activeFilter.type === 'email' && activeFilter.value === true) {
+        // Filtragem no frontend para "Com E-mail"
+      } else if (activeFilter.type === 'empresa' && activeFilter.value === true) {
+        // Filtragem no frontend para "Com Empresa"
+      } else if (activeFilter.type === 'origem' && activeFilter.value) {
+        url += `&origem=${activeFilter.value}`; // Assumindo que o backend pode filtrar por origem
+      }
+    }
+
     try {
-      let url = 'http://localhost:3000/leads';
-      const params = new URLSearchParams(); // Para construir a query string
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      let data = await response.json();
 
-      // Lógica de filtro da SearchBar (prioridade mais alta)
-      if (searchTerm) {
-        params.append('q', searchTerm);
-        // Ao aplicar busca por texto, resetamos o filtro de estatística
-        // para evitar comportamento ambíguo.
-        if (statsFilter) setStatsFilter(null); 
-      } 
-      // Lógica de filtro de estatísticas (apenas se não houver searchTerm)
-      else if (statsFilter) {
-        if (statsFilter.type === 'origem') {
-          params.append('origem', statsFilter.value);
-        } else if (statsFilter.type === 'email' && statsFilter.value === true) {
-          params.append('hasEmail', 'true');
-        } else if (statsFilter.type === 'empresa' && statsFilter.value === true) {
-          params.append('hasCompany', 'true');
+      // Filtragem no frontend para "Com E-mail" e "Com Empresa" se activeFilter estiver ativo
+      if (activeFilter) {
+        if (activeFilter.type === 'email' && activeFilter.value === true) {
+          data = data.filter(lead => lead.emails && lead.emails.length > 0 && lead.emails.some(e => e.email.trim() !== ''));
+        } else if (activeFilter.type === 'empresa' && lead.empresa && activeFilter.value === true) { // Adicionado 'lead.empresa' para evitar erro se for null/undefined
+          data = data.filter(lead => lead.empresa.trim() !== '');
         }
-        // Para "Total de Leads" e "Principal Origem" sem valor específico,
-        // não precisamos adicionar parâmetros.
       }
 
-      // Constrói a URL final com os parâmetros
-      if (params.toString()) {
-        url = `${url}?${params.toString()}`;
-      }
-
-      const res = await axios.get(url);
-      setLeads(res.data); // Guarda a lista completa (ou o resultado do filtro/busca do backend)
-      
-      // Aplica ordenação aqui, pois o filtro/busca vem do backend
-      setFilteredLeads(sortedLeads(res.data, sortBy, sortOrder));
-
+      setLeads(data);
+      toast.success('Leads carregados com sucesso!', { autoClose: 1000 });
     } catch (error) {
-      showToast('Erro ao carregar leads', 'error');
+      console.error('Erro ao buscar leads:', error);
+      toast.error('Erro ao carregar leads. Tente novamente.', { autoClose: 2000 });
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, statsFilter, sortBy, sortOrder]); // Dependências do useCallback
+  };
 
-  // Funções CRUD (mantidas, mas com chamadas a fetchLeads sem parâmetros)
-  const addLead = async (lead) => {
+  const handleAddLead = async (formData) => {
     try {
-      await axios.post('http://localhost:3000/leads', lead);
-      showToast('Lead adicionado com sucesso!');
-      fetchLeads(); // Recarrega com os filtros/busca atuais
+      const response = await fetch(`${API_BASE_URL}/leads`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao adicionar lead.');
+      }
+      toast.success('Lead adicionado com sucesso!');
+      fetchLeads(); // Atualiza a lista
     } catch (error) {
-      showToast('Erro ao adicionar lead', 'error');
+      console.error('Erro ao adicionar lead:', error);
+      toast.error(`Erro ao adicionar lead: ${error.message}`);
     }
   };
 
-  const updateLead = async (id, lead) => {
+  const handleEditLead = (lead) => {
+    setEditingLead(lead);
+  };
+
+  const handleUpdateLead = async (id, updatedData) => {
     try {
-      await axios.put(`http://localhost:3000/leads/${id}`, lead);
-      showToast('Lead atualizado com sucesso!');
-      fetchLeads(); // Recarrega com os filtros/busca atuais
+      const response = await fetch(`${API_BASE_URL}/leads/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedData),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao atualizar lead.');
+      }
+      toast.success('Lead atualizado com sucesso!');
+      setEditingLead(null);
+      fetchLeads();
     } catch (error) {
-      showToast('Erro ao atualizar lead', 'error');
+      console.error('Erro ao atualizar lead:', error);
+      toast.error(`Erro ao atualizar lead: ${error.message}`);
     }
   };
 
-  const deleteLead = async (id) => {
-    if (!window.confirm('Tem certeza que deseja remover este lead?')) return;
-    
-    try {
-      await axios.delete(`http://localhost:3000/leads/${id}`);
-      showToast('Lead removido com sucesso!');
-      fetchLeads(); // Recarrega com os filtros/busca atuais
-    } catch (error) {
-      showToast('Erro ao remover lead', 'error');
+  const handleDeleteLead = async (id) => {
+    if (window.confirm('Tem certeza que deseja deletar este lead?')) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/leads/${id}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Erro ao deletar lead.');
+        }
+        toast.success('Lead deletado com sucesso!');
+        fetchLeads(); // Atualiza a lista
+      } catch (error) {
+        console.error('Erro ao deletar lead:', error);
+        toast.error(`Erro ao deletar lead: ${error.message}`);
+      }
     }
   };
 
-  // Handler para a SearchBar
-  const handleSearch = (term) => {
-    setSearchTerm(term); // Atualiza o termo de busca
-    // O useEffect acionará fetchLeads quando searchTerm mudar
-    // Limpar o filtro de estatística é tratado dentro de fetchLeads
+  const toggleTheme = () => {
+    setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
   };
 
-  // Handler para cliques nos cards de estatísticas
-  const handleStatsFilter = (filterType, filterValue = null) => {
-    if (statsFilter && statsFilter.type === filterType && statsFilter.value === filterValue) {
-      // Se clicar no mesmo filtro novamente, desativa
-      setStatsFilter(null);
+  const handleFilterByStat = (filterType, filterValue) => {
+    if (activeFilter && activeFilter.type === filterType && activeFilter.value === filterValue) {
+      setActiveFilter(null);
+      setSearchTerm('');
     } else {
-      setStatsFilter({ type: filterType, value: filterValue });
+      setActiveFilter({ type: filterType, value: filterValue });
+      setSearchTerm('');
     }
-    // Ao aplicar um filtro de estatística, limpa o termo de busca da SearchBar
-    // para evitar conflitos visuais e lógicos.
-    setSearchTerm(''); 
   };
 
-
-  // useEffect para carregar leads na montagem e sempre que filtros/busca mudarem
-  useEffect(() => {
-    fetchLeads();
-  }, [fetchLeads]); // Dependência do useCallback
+  const clearStatsFilter = () => {
+    setActiveFilter(null);
+    setSearchTerm('');
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300">
-      <div className="mx-auto p-6">
-        <header className="mb-8 flex justify-between items-center">
-          <div>
-            <h1 className="text-4xl font-bold mb-2">
-              Gerenciador de Leads
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Gerencie seus leads de forma eficiente e organizada
-            </p>
-          </div>
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className="p-3 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-yellow-300 shadow-md hover:scale-105 transition-transform duration-200"
-            title={darkMode ? "Ativar Modo Claro" : "Ativar Modo Escuro"}
-          >
-            {darkMode ? <FaSun className="text-xl" /> : <FaMoon className="text-xl" />}
-          </button>
-        </header>
+    <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900 text-gray-100' : 'bg-gray-100 text-gray-900'}`}>
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover />
 
-        {/* Passa a função handleStatsFilter para o componente Stats */}
-        <Stats leads={leads} onFilterClick={handleStatsFilter} activeFilter={statsFilter} />
+      <header className="bg-blue-600 dark:bg-blue-800 text-white p-4 shadow-md flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Gerenciador de Leads</h1>
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-full bg-blue-700 dark:bg-blue-900 hover:bg-blue-800 dark:hover:bg-blue-700 transition-colors"
+          title="Alternar Tema"
+        >
+          {theme === 'dark' ? <FaSun className="text-yellow-400 text-xl" /> : <FaMoon className="text-gray-200 text-xl" />}
+        </button>
+      </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-sm p-6 dark:bg-gray-800 dark:text-gray-100">
-              <h2 className="text-xl font-semibold mb-4">Adicionar Novo Lead</h2>
-              <LeadForm onAdd={addLead} />
-            </div>
-          </div>
-
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-sm p-6 dark:bg-gray-800 dark:text-gray-100">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">Lista de Leads</h2>
-                {/* Passa searchTerm e setSearchTerm para SearchBar para controle externo */}
-                <SearchBar onSearch={handleSearch} searchTerm={searchTerm} /> 
-              </div>
-              
-              {loading ? (
-                <div className="flex justify-center items-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 dark:border-blue-300"></div>
-                </div>
-              ) : (
-                <LeadList 
-                  leads={filteredLeads} 
-                  onDelete={deleteLead}
-                  onUpdate={updateLead}
-                  onSort={handleSort}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                />
+      <main className="container mx-auto p-4 space-y-6">
+        {/* Seção Superior: Filtros de Busca/Ordenação e Estatísticas */}
+        <div className="bg-white shadow-md rounded-lg p-6 dark:bg-gray-800 dark:shadow-xl space-y-4">
+          <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0 md:space-x-4">
+            {/* Campo de Busca */}
+            <input
+              type="text"
+              placeholder="Buscar leads..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full md:w-1/3 px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400"
+            />
+            {/* Controles de Ordenação e Botões de Ação */}
+            <div className="flex space-x-2 w-full md:w-2/3 justify-end">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+              >
+                <option value="nome">Nome</option>
+                <option value="data_cadastro">Data de Cadastro</option>
+              </select>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+              >
+                <option value="asc">Ascendente</option>
+                <option value="desc">Descendente</option>
+              </select>
+              {editingLead && (
+                  <button
+                      onClick={() => setEditingLead(null)}
+                      className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 dark:bg-gray-600 dark:hover:bg-gray-700 transition-colors"
+                  >
+                      Cancelar Edição
+                  </button>
+              )}
+              {activeFilter && (
+                <button
+                  onClick={clearStatsFilter}
+                  className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 dark:bg-red-700 dark:hover:bg-red-800 transition-colors flex items-center"
+                  title="Limpar Filtro de Estatísticas"
+                >
+                  <FaTimesCircle className="mr-2" /> Limpar Filtro
+                </button>
               )}
             </div>
           </div>
+          {/* Componente de Estatísticas */}
+          <Stats leads={leads} onFilterClick={handleFilterByStat} activeFilter={activeFilter} />
         </div>
 
-        <Toast toast={toast} />
-      </div>
+        {/* Seção Inferior: Formulário (Esquerda) e Lista de Leads (Direita) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Coluna Esquerda: Formulário de Adicionar/Editar Lead */}
+          <div className="md:col-span-1">
+            <LeadForm onAdd={editingLead ? (data) => handleUpdateLead(editingLead.id, data) : handleAddLead} initialData={editingLead} />
+          </div>
+
+          {/* Coluna Direita: Lista de Leads */}
+          <div className="md:col-span-2">
+            {loading ? (
+              <p className="text-center text-gray-600 dark:text-gray-400 text-lg">Carregando leads...</p>
+            ) : (
+              <LeadList leads={leads} onEdit={handleEditLead} onDelete={handleDeleteLead} />
+            )}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
